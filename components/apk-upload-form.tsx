@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useState, useRef } from "react"
+import { upload } from "@vercel/blob/client"
 import { Upload, FileUp, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -76,33 +77,32 @@ export function ApkUploadForm({ onUploadComplete }: ApkUploadFormProps) {
     setProgress(10)
 
     try {
-      const formData = new FormData()
-      formData.append("file", selectedFile)
-
-      setProgress(30)
-
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      })
-
-      setProgress(80)
-
-      if (!response.ok) {
-        let errorMessage = "Upload failed"
-        try {
-          const data = await response.json()
-          errorMessage = data.error || errorMessage
-        } catch {
-          // Response was not valid JSON (e.g. "Request Entity Too Large")
-          if (response.status === 413) {
-            errorMessage = "File is too large. Please upload a smaller APK."
-          } else {
-            errorMessage = `Upload failed (HTTP ${response.status})`
-          }
+      // Client-side upload: streams directly to Vercel Blob,
+      // bypassing the API route body size limit entirely.
+      const blob = await upload(
+        `apk/${selectedFile.name}`,
+        selectedFile,
+        {
+          access: "public",
+          handleUploadUrl: "/api/upload",
+          onUploadProgress: ({ percentage }) => {
+            // Map 0-100 upload progress to 10-80 for our progress bar
+            setProgress(10 + Math.round(percentage * 0.7))
+          },
         }
-        throw new Error(errorMessage)
-      }
+      )
+
+      setProgress(85)
+
+      // Create short link for the uploaded file
+      await fetch("/api/short-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: blob.url,
+          filename: selectedFile.name,
+        }),
+      })
 
       setProgress(100)
 

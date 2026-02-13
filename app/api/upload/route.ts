@@ -1,59 +1,37 @@
-import { put } from "@vercel/blob"
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client"
 import { type NextRequest, NextResponse } from "next/server"
-import { createShortLink } from "@/lib/short-links"
-
-// Allow large APK uploads (up to 25 MB)
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-}
-
-// Increase the body size limit for this route (Next.js App Router)
-export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
+  const body = (await request.json()) as HandleUploadBody
+
   try {
-    const contentLength = request.headers.get("content-length")
-    if (contentLength && parseInt(contentLength) > 25 * 1024 * 1024) {
-      return NextResponse.json(
-        { error: "File size must be under 25 MB." },
-        { status: 413 }
-      )
-    }
+    const jsonResponse = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (pathname) => {
+        // Validate the file is an APK
+        if (!pathname.toLowerCase().endsWith(".apk")) {
+          throw new Error("Only APK files are allowed")
+        }
 
-    const formData = await request.formData()
-    const file = formData.get("file") as File
-
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
-    }
-
-    if (!file.name.toLowerCase().endsWith(".apk")) {
-      return NextResponse.json(
-        { error: "Only APK files are allowed" },
-        { status: 400 }
-      )
-    }
-
-    const blob = await put(`apk/${file.name}`, file, {
-      access: "public",
-      addRandomSuffix: true,
-      contentType: "application/vnd.android.package-archive",
+        return {
+          allowedContentTypes: [
+            "application/vnd.android.package-archive",
+            "application/octet-stream",
+          ],
+          maximumSizeInBytes: 20 * 1024 * 1024, // 20 MB
+        }
+      },
+      onUploadCompleted: async () => {
+        // No-op: short link creation is handled client-side after upload
+      },
     })
 
-    const shortCode = await createShortLink(blob.url, file.name)
-
-    return NextResponse.json({
-      url: blob.url,
-      pathname: blob.pathname,
-      filename: file.name,
-      size: file.size,
-      uploadedAt: new Date().toISOString(),
-      shortCode,
-    })
+    return NextResponse.json(jsonResponse)
   } catch (error) {
-    console.error("Upload error:", error)
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 })
+    return NextResponse.json(
+      { error: (error as Error).message },
+      { status: 400 }
+    )
   }
 }
