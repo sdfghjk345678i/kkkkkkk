@@ -89,8 +89,19 @@ export function ApkUploadForm({ onUploadComplete }: ApkUploadFormProps) {
       setProgress(80)
 
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Upload failed")
+        let errorMessage = "Upload failed"
+        try {
+          const data = await response.json()
+          errorMessage = data.error || errorMessage
+        } catch {
+          // Response was not valid JSON (e.g. "Request Entity Too Large")
+          if (response.status === 413) {
+            errorMessage = "File is too large. Please upload a smaller APK."
+          } else {
+            errorMessage = `Upload failed (HTTP ${response.status})`
+          }
+        }
+        throw new Error(errorMessage)
       }
 
       setProgress(100)
