@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useState, useRef } from "react"
+import { upload } from "@vercel/blob/client"
 import { Upload, FileUp, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -76,22 +77,32 @@ export function ApkUploadForm({ onUploadComplete }: ApkUploadFormProps) {
     setProgress(10)
 
     try {
-      const formData = new FormData()
-      formData.append("file", selectedFile)
+      // Client-side upload: streams directly to Vercel Blob,
+      // bypassing the API route body size limit entirely.
+      const blob = await upload(
+        `apk/${selectedFile.name}`,
+        selectedFile,
+        {
+          access: "public",
+          handleUploadUrl: "/api/upload",
+          onUploadProgress: ({ percentage }) => {
+            // Map 0-100 upload progress to 10-80 for our progress bar
+            setProgress(10 + Math.round(percentage * 0.7))
+          },
+        }
+      )
 
-      setProgress(30)
+      setProgress(85)
 
-      const response = await fetch("/api/upload", {
+      // Create short link for the uploaded file
+      await fetch("/api/short-link", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: blob.url,
+          filename: selectedFile.name,
+        }),
       })
-
-      setProgress(80)
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Upload failed")
-      }
 
       setProgress(100)
 
